@@ -427,6 +427,7 @@ public class MainActivity extends AppCompatActivity implements MMListener {
 
             //Paint paint = new Paint();
             //paint.setColor(Color.GREEN);
+            ArrayList<Bitmap> faceBmps = new ArrayList<Bitmap>();
             for (Face face : faces) {
                 BoundingBox faceRect = face.getFaceRect();
                 /*paint.setStyle(Paint.Style.STROKE);
@@ -455,7 +456,7 @@ public class MainActivity extends AppCompatActivity implements MMListener {
                 paint.setColor(0xFFFFFFFF);
                 //canvas.drawRect(0, 0, bmp.getWidth(), bmp.getHeight(), paint);
 
-                Bitmap faceBmp = Bitmap.createBitmap(bmp, faceRect.getLeft(), faceRect.getTop(), faceRect.getWidth(), faceRect.getHeight());
+                /*Bitmap faceBmp = Bitmap.createBitmap(bmp, faceRect.getLeft(), faceRect.getTop(), faceRect.getWidth(), faceRect.getHeight());
                 Path path = new Path();
                 path.addOval(faceRect.getWidth() / 6, faceRect.getHeight() / 6, faceRect.getWidth() - faceRect.getWidth() / 6, faceRect.getHeight() - faceRect.getHeight() / 6, Path.Direction.CW);
                 path.setFillType(Path.FillType.WINDING);
@@ -474,7 +475,7 @@ public class MainActivity extends AppCompatActivity implements MMListener {
                 blurMaskFilter = new BlurMaskFilter(100, BlurMaskFilter.Blur.INNER);
                 paintBlur.setMaskFilter(blurMaskFilter);
                 canvas.drawBitmap(faceBmp, faceRect.getLeft(), faceRect.getTop(), paintBlur);
-                //canvas.drawBitmap(faceBmp, faceRect.getLeft(), faceRect.getTop(), null);
+                //canvas.drawBitmap(faceBmp, faceRect.getLeft(), faceRect.getTop(), null);*/
 
                 FaceLandmark leftEye = null;
                 FaceLandmark rightEye = null;
@@ -504,7 +505,7 @@ public class MainActivity extends AppCompatActivity implements MMListener {
                         Bitmap lipBmp = Bitmap.createBitmap(bmp, leftLip.getPosition().x, rightLip.getPosition().y - lipHeight / 2, lipWidth, lipHeight);
                         Bitmap scaledLipBmp = Bitmap.createScaledBitmap(lipBmp, eyeWidth, eyeHeight, false);
 
-                        path = new Path();
+                        Path path = new Path();
                         path.addOval(0, 0, eyeWidth, eyeHeight, Path.Direction.CW);
                         path.setFillType(Path.FillType.WINDING);
                         scaledLipBmp.setHasAlpha(true);
@@ -526,7 +527,6 @@ public class MainActivity extends AppCompatActivity implements MMListener {
                             Canvas eyeCanvas = new Canvas(scaledLeftEyeBmp);
                             eyeCanvas.clipOutPath(path);
                             eyeCanvas.drawColor(0x000000000, PorterDuff.Mode.CLEAR);
-
 
                             //canvas.drawBitmap(leftEyeBmp, (leftLip.getPosition().x + rightLip.getPosition().x) / 2 - eyeWidth / 2, (leftLip.getPosition().y + rightLip.getPosition().y) / 2 - eyeHeight / 2, null);
                             canvas.drawBitmap(scaledLeftEyeBmp, (leftLip.getPosition().x + rightLip.getPosition().x) / 2 - lipWidth / 2, (leftLip.getPosition().y + rightLip.getPosition().y) / 2 - lipHeight / 2, null);
@@ -575,10 +575,39 @@ public class MainActivity extends AppCompatActivity implements MMListener {
 
                 canvas.drawBitmap(result.getBitmap(), faceRect.getLeft(), faceRect.getTop(), null);*/
 
+                Bitmap faceBmp = Bitmap.createBitmap(bmp, faceRect.getLeft(), faceRect.getTop(), faceRect.getWidth(), faceRect.getHeight());
+                Path path = new Path();
+                path.addOval(faceRect.getWidth() / 6, faceRect.getHeight() / 6, faceRect.getWidth() - faceRect.getWidth() / 6, faceRect.getHeight() - faceRect.getHeight() / 6, Path.Direction.CW);
+                path.setFillType(Path.FillType.WINDING);
+                faceBmp.setHasAlpha(true);
+                Canvas faceCanvas = new Canvas(faceBmp);
+                faceCanvas.clipOutPath(path);
+                faceCanvas.drawColor(0x000000000, PorterDuff.Mode.CLEAR);
+
+                faceBmps.add(faceBmp);
             }
 
+            if (faces.size() > 1)
+                for (int src = 0; src < faces.size(); ++src) {
+                    BoundingBox srcRect = faces.get(src).getFaceRect();
+                    Bitmap srcBmp = faceBmps.get(src);
+
+                    Log.i(LOG_TAG, "src = " + src);
+                    int dst = src + 1;
+                    if (dst >= faces.size())
+                        dst = 0;
+                    Log.i(LOG_TAG, "dst = " + dst);
+
+                    BoundingBox dstRect = faces.get(dst).getFaceRect();
+                    Bitmap dstBmp = faceBmps.get(dst);
+
+                    Bitmap scaledSrcBmp = Bitmap.createScaledBitmap(srcBmp, dstRect.getWidth(), dstRect.getHeight(), false);
+
+                    canvas.drawBitmap(scaledSrcBmp, dstRect.getLeft(), dstRect.getTop(), null);
+                }
+
             timer = new Timer();
-            timer.schedule(new CameraTimer(), 100, 100);
+            timer.schedule(new CameraTimer(), 0, 200);
         }
 
         ivImage.setImageBitmap(tempBmp);
