@@ -72,6 +72,9 @@ public class MainActivity extends AppCompatActivity implements MMListener {
     final String publishTopic = "pimoroni/blinkt";
     final String publishMessage = "rgb,5,255,0,255";
 
+    final String username = "android";
+    final String password = "wibble123";
+
     private static final int REQUEST_IMAGE_TAKE = 100;
     private static final int REQUEST_IMAGE_SELECT = 200;
 
@@ -124,7 +127,7 @@ public class MainActivity extends AppCompatActivity implements MMListener {
             }
         });
 
-        //clientId = clientId + System.currentTimeMillis();
+        clientId = clientId + System.currentTimeMillis();
 
         mqttAndroidClient = new MqttAndroidClient(getApplicationContext(), serverUri, clientId);
         mqttAndroidClient.setCallback(new MqttCallbackExtended() {
@@ -134,7 +137,7 @@ public class MainActivity extends AppCompatActivity implements MMListener {
                 if (reconnect) {
                     Log.i(LOG_TAG, "Reconnected to : " + serverURI);
                     // Because Clean Session is true, we need to re-subscribe
-                    subscribeToTopic();
+                    //subscribeToTopic();
                 } else {
                     Log.i(LOG_TAG, "Connected to: " + serverURI);
                 }
@@ -158,31 +161,8 @@ public class MainActivity extends AppCompatActivity implements MMListener {
         MqttConnectOptions mqttConnectOptions = new MqttConnectOptions();
         mqttConnectOptions.setAutomaticReconnect(true);
         mqttConnectOptions.setCleanSession(false);
-
-        try {
-            //addToHistory("Connecting to " + serverUri);
-            mqttAndroidClient.connect(mqttConnectOptions, null, new IMqttActionListener() {
-                @Override
-                public void onSuccess(IMqttToken asyncActionToken) {
-                    DisconnectedBufferOptions disconnectedBufferOptions = new DisconnectedBufferOptions();
-                    disconnectedBufferOptions.setBufferEnabled(true);
-                    disconnectedBufferOptions.setBufferSize(100);
-                    disconnectedBufferOptions.setPersistBuffer(false);
-                    disconnectedBufferOptions.setDeleteOldestMessages(false);
-                    mqttAndroidClient.setBufferOpts(disconnectedBufferOptions);
-                    subscribeToTopic();
-                }
-
-                @Override
-                public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
-                    Log.i(LOG_TAG, "Failed to connect to: " + serverUri);
-                }
-            });
-
-
-        } catch (MqttException ex){
-            ex.printStackTrace();
-        }
+        mqttConnectOptions.setUserName(username);
+        mqttConnectOptions.setPassword(password.toCharArray());
 
         requestPermissions();
     }
@@ -228,6 +208,7 @@ public class MainActivity extends AppCompatActivity implements MMListener {
         } else {
             Canvas canvas = new Canvas(tempBmp);
             String facecount = "I count " + String.valueOf(faces.size()) + " faces";
+            publishMessage();
             tvFace.setText(facecount);
             Paint paint = new Paint();
             paint.setColor(Color.GREEN);
@@ -312,35 +293,6 @@ public class MainActivity extends AppCompatActivity implements MMListener {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-    }
-
-    public void subscribeToTopic(){
-        try {
-            mqttAndroidClient.subscribe(subscriptionTopic, 0, null, new IMqttActionListener() {
-                @Override
-                public void onSuccess(IMqttToken asyncActionToken) {
-                    Log.i(LOG_TAG, "Subscribed!");
-                }
-
-                @Override
-                public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
-                    Log.i(LOG_TAG, "Failed to subscribe");
-                }
-            });
-
-            // THIS DOES NOT WORK!
-            mqttAndroidClient.subscribe(subscriptionTopic, 0, new IMqttMessageListener() {
-                @Override
-                public void messageArrived(String topic, MqttMessage message) throws Exception {
-                    // message Arrived!
-                    System.out.println("Message: " + topic + " : " + new String(message.getPayload()));
-                }
-            });
-
-        } catch (MqttException ex){
-            System.err.println("Exception whilst subscribing");
-            ex.printStackTrace();
-        }
     }
 
     public void publishMessage(){
