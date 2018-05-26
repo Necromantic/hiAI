@@ -160,8 +160,8 @@ public class MainActivity extends AppCompatActivity implements MMListener {
         } else {
             Canvas canvas = new Canvas(tempBmp);
 
-            Paint paint = new Paint();
-            paint.setColor(Color.GREEN);
+            //Paint paint = new Paint();
+            //paint.setColor(Color.GREEN);
             for (Face face : faces) {
                 BoundingBox faceRect = face.getFaceRect();
                 /*paint.setStyle(Paint.Style.STROKE);
@@ -185,6 +185,31 @@ public class MainActivity extends AppCompatActivity implements MMListener {
                 strFace = "roll: " + face.getRoll();
                 textY += textHeight;
                 canvas.drawText(strFace, textX, textY, paint);*/
+
+                Paint paint = new Paint();
+                paint.setColor(0xFFFFFFFF);
+                //canvas.drawRect(0, 0, bmp.getWidth(), bmp.getHeight(), paint);
+
+                Bitmap faceBmp = Bitmap.createBitmap(bmp, faceRect.getLeft(), faceRect.getTop(), faceRect.getWidth(), faceRect.getHeight());
+                Path path = new Path();
+                path.addOval(faceRect.getWidth() / 6, faceRect.getHeight() / 6, faceRect.getWidth() - faceRect.getWidth() / 6, faceRect.getHeight() - faceRect.getHeight() / 6, Path.Direction.CW);
+                path.setFillType(Path.FillType.WINDING);
+                faceBmp.setHasAlpha(true);
+                Canvas faceCanvas = new Canvas(faceBmp);
+                faceCanvas.clipOutPath(path);
+                faceCanvas.drawColor(0x000000000, PorterDuff.Mode.CLEAR);
+
+                Bitmap alpha = faceBmp.extractAlpha();
+                Paint paintBlur = new Paint();
+                BlurMaskFilter blurMaskFilter = new BlurMaskFilter(faceRect.getWidth() / 20, BlurMaskFilter.Blur.INNER);
+                paintBlur.setMaskFilter(blurMaskFilter);
+                faceCanvas.drawBitmap(alpha, 0, 0, paintBlur);
+
+                //Create inner blur
+                /*lurMaskFilter = new BlurMaskFilter(faceRect.getWidth() / 20, BlurMaskFilter.Blur.NORMAL);
+                paintBlur.setMaskFilter(blurMaskFilter);
+                canvas.drawBitmap(faceBmp, faceRect.getLeft(), faceRect.getTop(), paintBlur);*/
+                canvas.drawBitmap(faceBmp, faceRect.getLeft(), faceRect.getTop(), null);
 
                 FaceLandmark leftEye = null;
                 FaceLandmark rightEye = null;
@@ -214,8 +239,8 @@ public class MainActivity extends AppCompatActivity implements MMListener {
                         Bitmap lipBmp = Bitmap.createBitmap(bmp, leftLip.getPosition().x, rightLip.getPosition().y - lipHeight / 2, lipWidth, lipHeight);
                         Bitmap scaledLipBmp = Bitmap.createScaledBitmap(lipBmp, eyeWidth, eyeHeight, false);
 
-                        Path path = new Path();
-                        path.addRoundRect(0, 0, eyeWidth, eyeHeight, 100f, 100f, Path.Direction.CW);
+                        path = new Path();
+                        path.addOval(0, 0, eyeWidth, eyeHeight, Path.Direction.CW);
                         path.setFillType(Path.FillType.WINDING);
                         scaledLipBmp.setHasAlpha(true);
                         Canvas lipCanvas = new Canvas(scaledLipBmp);
@@ -230,12 +255,13 @@ public class MainActivity extends AppCompatActivity implements MMListener {
                             Bitmap scaledLeftEyeBmp = Bitmap.createScaledBitmap(leftEyeBmp, lipWidth, lipHeight, false);
 
                             path = new Path();
-                            path.addRoundRect(0, 0, lipWidth, lipHeight, 100f, 100f, Path.Direction.CW);
+                            path.addOval(0, 0, lipWidth, lipHeight, Path.Direction.CW);
                             path.setFillType(Path.FillType.WINDING);
                             scaledLeftEyeBmp.setHasAlpha(true);
                             Canvas eyeCanvas = new Canvas(scaledLeftEyeBmp);
                             eyeCanvas.clipOutPath(path);
                             eyeCanvas.drawColor(0x000000000, PorterDuff.Mode.CLEAR);
+
 
                             //canvas.drawBitmap(leftEyeBmp, (leftLip.getPosition().x + rightLip.getPosition().x) / 2 - eyeWidth / 2, (leftLip.getPosition().y + rightLip.getPosition().y) / 2 - eyeHeight / 2, null);
                             canvas.drawBitmap(scaledLeftEyeBmp, (leftLip.getPosition().x + rightLip.getPosition().x) / 2 - lipWidth / 2, (leftLip.getPosition().y + rightLip.getPosition().y) / 2 - lipHeight / 2, null);
