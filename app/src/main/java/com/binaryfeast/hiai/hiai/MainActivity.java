@@ -31,6 +31,17 @@ import com.huawei.hiai.vision.visionkit.common.BoundingBox;
 import com.huawei.hiai.vision.visionkit.face.Face;
 import com.huawei.hiai.vision.visionkit.face.FaceLandmark;
 
+import org.eclipse.paho.android.service.MqttAndroidClient;
+import org.eclipse.paho.client.mqttv3.DisconnectedBufferOptions;
+import org.eclipse.paho.client.mqttv3.IMqttActionListener;
+import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
+import org.eclipse.paho.client.mqttv3.IMqttMessageListener;
+import org.eclipse.paho.client.mqttv3.IMqttToken;
+import org.eclipse.paho.client.mqttv3.MqttCallbackExtended;
+import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
+import org.eclipse.paho.client.mqttv3.MqttException;
+import org.eclipse.paho.client.mqttv3.MqttMessage;
+
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -38,15 +49,28 @@ import java.util.List;
 
 import android.support.v4.content.ContextCompat;
 
+import org.eclipse.paho.client.mqttv3.MqttException;
+import org.eclipse.paho.client.mqttv3.MqttMessage;
+
 /**
  * Created by huarong on 2018/2/26.
  */
 public class MainActivity extends AppCompatActivity implements MMListener {
+
     private static final String LOG_TAG = "face_detect";
     private Button btnTake;
     private Button btnSelect;
     private ImageView ivImage;
     private TextView tvFace;
+
+    MqttAndroidClient mqttAndroidClient;
+
+    final String serverUri = "tcp://mqtt.newhook.co.uk:8883";
+
+    String clientId = "android";
+    final String subscriptionTopic = "pimoroni/blinkt";
+    final String publishTopic = "pimoroni/blinkt";
+    final String publishMessage = "rgb,5,255,0,255";
 
     private static final int REQUEST_IMAGE_TAKE = 100;
     private static final int REQUEST_IMAGE_SELECT = 200;
@@ -100,6 +124,66 @@ public class MainActivity extends AppCompatActivity implements MMListener {
             }
         });
 
+        //clientId = clientId + System.currentTimeMillis();
+
+        mqttAndroidClient = new MqttAndroidClient(getApplicationContext(), serverUri, clientId);
+        mqttAndroidClient.setCallback(new MqttCallbackExtended() {
+            @Override
+            public void connectComplete(boolean reconnect, String serverURI) {
+
+                if (reconnect) {
+                    Log.i(LOG_TAG, "Reconnected to : " + serverURI);
+                    // Because Clean Session is true, we need to re-subscribe
+                    subscribeToTopic();
+                } else {
+                    Log.i(LOG_TAG, "Connected to: " + serverURI);
+                }
+            }
+
+            @Override
+            public void connectionLost(Throwable cause) {
+                Log.i(LOG_TAG, "The Connection was lost.");
+            }
+
+            @Override
+            public void messageArrived(String topic, MqttMessage message) throws Exception {
+                Log.i(LOG_TAG, "Incoming message: " + new String(message.getPayload()));
+            }
+
+            @Override
+            public void deliveryComplete(IMqttDeliveryToken token) {
+
+            }
+        });
+        MqttConnectOptions mqttConnectOptions = new MqttConnectOptions();
+        mqttConnectOptions.setAutomaticReconnect(true);
+        mqttConnectOptions.setCleanSession(false);
+
+        try {
+            //addToHistory("Connecting to " + serverUri);
+            mqttAndroidClient.connect(mqttConnectOptions, null, new IMqttActionListener() {
+                @Override
+                public void onSuccess(IMqttToken asyncActionToken) {
+                    DisconnectedBufferOptions disconnectedBufferOptions = new DisconnectedBufferOptions();
+                    disconnectedBufferOptions.setBufferEnabled(true);
+                    disconnectedBufferOptions.setBufferSize(100);
+                    disconnectedBufferOptions.setPersistBuffer(false);
+                    disconnectedBufferOptions.setDeleteOldestMessages(false);
+                    mqttAndroidClient.setBufferOpts(disconnectedBufferOptions);
+                    subscribeToTopic();
+                }
+
+                @Override
+                public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
+                    Log.i(LOG_TAG, "Failed to connect to: " + serverUri);
+                }
+            });
+
+
+        } catch (MqttException ex){
+            ex.printStackTrace();
+        }
+
         requestPermissions();
     }
 
@@ -143,7 +227,8 @@ public class MainActivity extends AppCompatActivity implements MMListener {
             tvFace.setText("not get face");
         } else {
             Canvas canvas = new Canvas(tempBmp);
-
+            String facecount = "I count " + String.valueOf(faces.size()) + " faces";
+            tvFace.setText(facecount);
             Paint paint = new Paint();
             paint.setColor(Color.GREEN);
             for (Face face : faces) {
@@ -227,5 +312,50 @@ public class MainActivity extends AppCompatActivity implements MMListener {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+    }
+
+    public void subscribeToTopic(){
+        try {
+            mqttAndroidClient.subscribe(subscriptionTopic, 0, null, new IMqttActionListener() {
+                @Override
+                public void onSuccess(IMqttToken asyncActionToken) {
+                    Log.i(LOG_TAG, "Subscribed!");
+                }
+
+                @Override
+                public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
+                    Log.i(LOG_TAG, "Failed to subscribe");
+                }
+            });
+
+            // THIS DOES NOT WORK!
+            mqttAndroidClient.subscribe(subscriptionTopic, 0, new IMqttMessageListener() {
+                @Override
+                public void messageArrived(String topic, MqttMessage message) throws Exception {
+                    // message Arrived!
+                    System.out.println("Message: " + topic + " : " + new String(message.getPayload()));
+                }
+            });
+
+        } catch (MqttException ex){
+            System.err.println("Exception whilst subscribing");
+            ex.printStackTrace();
+        }
+    }
+
+    public void publishMessage(){
+
+        try {
+            MqttMessage message = new MqttMessage();
+            message.setPayload(publishMessage.getBytes());
+            mqttAndroidClient.publish(publishTopic, message);
+            Log.i(LOG_TAG, "Message Published");
+            if(!mqttAndroidClient.isConnected()){
+                Log.i(LOG_TAG, mqttAndroidClient.getBufferedMessageCount() + " messages in buffer.");
+            }
+        } catch (MqttException e) {
+            System.err.println("Error Publishing: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 }

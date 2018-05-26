@@ -22,11 +22,16 @@ repositories {
     flatDir {
         dirs 'libs'
     }
+    maven {
+        url "https://repo.eclipse.org/content/repositories/paho-snapshots/"
+    }
 }
 
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     compile(name: 'huawei-hiai-vision-8.1.0.300', ext: 'aar')
+    compile 'org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.1.0'
+    compile 'org.eclipse.paho:org.eclipse.paho.android.service:1.1.1'
     compile 'com.google.code.gson:gson:2.8.1'
     implementation 'com.android.support:appcompat-v7:27.1.1'
     implementation 'com.android.support.constraint:constraint-layout:1.1.0'
