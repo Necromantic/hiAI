@@ -2,6 +2,7 @@ package com.binaryfeast.hiai.hiai;
 
 import android.Manifest;
 import android.app.ProgressDialog;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
@@ -12,6 +13,7 @@ import android.graphics.BlurMaskFilter;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.ComposeShader;
+import android.graphics.ImageFormat;
 import android.graphics.LinearGradient;
 import android.graphics.MaskFilter;
 import android.graphics.Paint;
@@ -23,15 +25,39 @@ import android.graphics.RadialGradient;
 import android.graphics.Rect;
 import android.graphics.Region;
 import android.graphics.Shader;
+import android.graphics.SurfaceTexture;
+import android.hardware.Camera;
+import android.hardware.camera2.CameraAccessException;
+import android.hardware.camera2.CameraCaptureSession;
+import android.hardware.camera2.CameraCharacteristics;
+import android.hardware.camera2.CameraDevice;
+import android.hardware.camera2.CameraManager;
+import android.hardware.camera2.CameraMetadata;
+import android.hardware.camera2.CaptureRequest;
+import android.hardware.camera2.TotalCaptureResult;
+import android.hardware.camera2.params.StreamConfigurationMap;
+import android.media.Image;
+import android.media.ImageReader;
+import android.media.MediaCodec;
+import android.media.MediaCodecList;
+import android.media.MediaFormat;
+import android.media.MediaRecorder;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.HandlerThread;
 import android.provider.MediaStore;
+import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.FileProvider;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
+import android.util.Size;
+import android.util.SparseIntArray;
+import android.view.Surface;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ImageView;
@@ -48,11 +74,21 @@ import com.huawei.hiai.vision.visionkit.image.ImageResult;
 import com.huawei.hiai.vision.visionkit.image.sr.SuperResolutionConfiguration;
 
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.ByteBuffer;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
+import java.util.Timer;
+import java.util.TimerTask;
 
 import android.support.v4.content.ContextCompat;
+import android.widget.Toast;
 
 /**
  * Created by huarong on 2018/2/26.
@@ -70,6 +106,25 @@ public class MainActivity extends AppCompatActivity implements MMListener {
     private Uri fileUri;
     private Bitmap bmp;
     private ProgressDialog dialog;
+    private static final SparseIntArray ORIENTATIONS = new SparseIntArray();
+    static {
+        ORIENTATIONS.append(Surface.ROTATION_0, 90);
+        ORIENTATIONS.append(Surface.ROTATION_90, 0);
+        ORIENTATIONS.append(Surface.ROTATION_180, 270);
+        ORIENTATIONS.append(Surface.ROTATION_270, 180);
+    }
+    private String cameraId;
+    protected CameraDevice cameraDevice;
+    protected CameraCaptureSession cameraCaptureSessions;
+    protected CaptureRequest captureRequest;
+    protected CaptureRequest.Builder captureRequestBuilder;
+    private Size imageDimension;
+    private ImageReader imageReader;
+    private static final int REQUEST_CAMERA_PERMISSION = 200;
+    private Handler mBackgroundHandler;
+    private HandlerThread mBackgroundThread;
+    private Timer timer;
+    private FaceDetectTask cnnTask;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -120,6 +175,216 @@ public class MainActivity extends AppCompatActivity implements MMListener {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        Log.e(LOG_TAG, "onResume");
+        startBackgroundThread();
+        openCamera();
+    }
+    @Override
+    protected void onPause() {
+        Log.e(LOG_TAG, "onPause");
+        stopBackgroundThread();
+        super.onPause();
+        timer.cancel();
+    }
+
+    protected void startBackgroundThread() {
+        mBackgroundThread = new HandlerThread("Camera Background");
+        mBackgroundThread.start();
+        mBackgroundHandler = new Handler(mBackgroundThread.getLooper());
+    }
+    protected void stopBackgroundThread() {
+        mBackgroundThread.quitSafely();
+        try {
+            mBackgroundThread.join();
+            mBackgroundThread = null;
+            mBackgroundHandler = null;
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void openCamera() {
+        CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
+        Log.e(LOG_TAG, "is camera open");
+        try {
+            cameraId = manager.getCameraIdList()[0];
+            CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraId);
+            StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+            assert map != null;
+            imageDimension = map.getOutputSizes(SurfaceTexture.class)[0];
+            // Add permission for camera and let user grant the permission
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(MainActivity.this, new String[]{Manifest.permission.CAMERA, Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_CAMERA_PERMISSION);
+                return;
+            }
+            manager.openCamera(cameraId, stateCallback, null);
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
+        Log.e(LOG_TAG, "openCamera X");
+    }
+
+    class CameraTimer extends TimerTask {
+
+        @Override
+        public void run() {
+            if (cnnTask == null || cnnTask.getStatus() == AsyncTask.Status.PENDING || cnnTask.getStatus() == AsyncTask.Status.FINISHED)
+                takePicture();
+        }
+    };
+
+    private final CameraDevice.StateCallback stateCallback = new CameraDevice.StateCallback() {
+        @Override
+        public void onOpened(CameraDevice camera) {
+            //This is called when the camera is open
+            Log.e(LOG_TAG, "onOpened");
+            cameraDevice = camera;
+
+            timer = new Timer();
+            timer.schedule(new CameraTimer(), 3000);
+        }
+        @Override
+        public void onDisconnected(CameraDevice camera) {
+            cameraDevice.close();
+            timer.cancel();
+        }
+        @Override
+        public void onError(CameraDevice camera, int error) {
+            cameraDevice.close();
+            cameraDevice = null;
+            timer.cancel();
+        }
+    };
+
+    private void closeCamera() {
+        if (null != cameraDevice) {
+            cameraDevice.close();
+            cameraDevice = null;
+        }
+        if (null != imageReader) {
+            imageReader.close();
+            imageReader = null;
+        }
+    }
+
+    protected void takePicture() {
+        timer.cancel();
+        if(null == cameraDevice) {
+            Log.e(LOG_TAG, "cameraDevice is null");
+            return;
+        }
+        CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
+        try {
+            CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraDevice.getId());
+            Size[] jpegSizes = null;
+            if (characteristics != null) {
+                jpegSizes = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP).getOutputSizes(ImageFormat.JPEG);
+            }
+            int width = 640;
+            int height = 480;
+            if (jpegSizes != null && 0 < jpegSizes.length) {
+                width = jpegSizes[0].getWidth();
+                height = jpegSizes[0].getHeight();
+            }
+            //try {
+            //    MediaCodecList codecList = new MediaCodecList(MediaCodecList.REGULAR_CODECS);
+            //    MediaCodec codec = MediaCodec.createByCodecName(codecList.findEncoderForFormat(MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_VP9, 1920, 1080)));
+
+            ImageReader reader = ImageReader.newInstance(width, height, ImageFormat.JPEG, 1);
+            List<Surface> outputSurfaces = new ArrayList<Surface>(2);
+            outputSurfaces.add(reader.getSurface());
+            //Surface surface = codec.createInputSurface();
+            //outputSurfaces.add(surface);
+            final CaptureRequest.Builder captureBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
+            //captureBuilder.addTarget(surface);
+            captureBuilder.addTarget(reader.getSurface());
+
+            captureBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
+            // Orientation
+            int rotation = getWindowManager().getDefaultDisplay().getRotation();
+            captureBuilder.set(CaptureRequest.JPEG_ORIENTATION, ORIENTATIONS.get(rotation));
+
+            /*    MediaCodec.OnFrameRenderedListener onFrameRenderedListener = new MediaCodec.OnFrameRenderedListener() {
+                    @Override
+                    public void onFrameRendered(@NonNull MediaCodec mediaCodec, long l, long l1) {
+
+                        Log.e(LOG_TAG, "onFrameRendered");
+                    }
+                };
+
+            codec.setOnFrameRenderedListener(onFrameRenderedListener, null);*/
+            final File file = new File(Environment.getExternalStorageDirectory()+"/pic.jpg");
+            ImageReader.OnImageAvailableListener readerListener = new ImageReader.OnImageAvailableListener() {
+                @Override
+                public void onImageAvailable(ImageReader reader) {
+                    Image image = null;
+                    try {
+                        image = reader.acquireLatestImage();
+                        ByteBuffer buffer = image.getPlanes()[0].getBuffer();
+                        byte[] bytes = new byte[buffer.capacity()];
+                        buffer.get(bytes);
+                        save(bytes);
+                        Log.e(LOG_TAG, "" + image.getWidth());
+                        bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, null);
+
+                        cnnTask = new FaceDetectTask(MainActivity.this);
+                        cnnTask.execute(bmp);
+                    } catch (FileNotFoundException e) {
+                        e.printStackTrace();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    } finally {
+                        if (image != null) {
+                            image.close();
+                        }
+                    }
+                }
+                private void save(byte[] bytes) throws IOException {
+                    if (true)
+                        return;
+                    OutputStream output = null;
+                    try {
+                        output = new FileOutputStream(file);
+                        output.write(bytes);
+                    } finally {
+                        if (null != output) {
+                            output.close();
+                        }
+                    }
+                }
+            };
+            reader.setOnImageAvailableListener(readerListener, mBackgroundHandler);
+            final CameraCaptureSession.CaptureCallback captureListener = new CameraCaptureSession.CaptureCallback() {
+                @Override
+                public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
+                    super.onCaptureCompleted(session, request, result);
+                    //Toast.makeText(MainActivity.this, "Saved:" + file, Toast.LENGTH_SHORT).show();
+                }
+            };
+            cameraDevice.createCaptureSession(outputSurfaces, new CameraCaptureSession.StateCallback() {
+                @Override
+                public void onConfigured(CameraCaptureSession session) {
+                    try {
+                        session.capture(captureBuilder.build(), captureListener, mBackgroundHandler);
+                    } catch (CameraAccessException e) {
+                        e.printStackTrace();
+                    }
+                }
+                @Override
+                public void onConfigureFailed(CameraCaptureSession session) {
+                }
+            }, mBackgroundHandler);
+            //} catch (IOException e) {
+            //    e.printStackTrace();
+            //}
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         if ((requestCode == REQUEST_IMAGE_TAKE || requestCode == REQUEST_IMAGE_SELECT) && resultCode == RESULT_OK) {
             String imgPath;
@@ -141,7 +406,7 @@ public class MainActivity extends AppCompatActivity implements MMListener {
             dialog = ProgressDialog.show(MainActivity.this,
                     "Predicting...", "Wait for one sec...", true);
 
-            FaceDetectTask cnnTask = new FaceDetectTask(MainActivity.this);
+            cnnTask = new FaceDetectTask(MainActivity.this);
             cnnTask.execute(bmp);
         } else {
             btnTake.setEnabled(true);
@@ -201,15 +466,15 @@ public class MainActivity extends AppCompatActivity implements MMListener {
 
                 Bitmap alpha = faceBmp.extractAlpha();
                 Paint paintBlur = new Paint();
-                BlurMaskFilter blurMaskFilter = new BlurMaskFilter(faceRect.getWidth() / 20, BlurMaskFilter.Blur.INNER);
+                BlurMaskFilter blurMaskFilter = new BlurMaskFilter(100, BlurMaskFilter.Blur.OUTER);
                 paintBlur.setMaskFilter(blurMaskFilter);
                 faceCanvas.drawBitmap(alpha, 0, 0, paintBlur);
 
                 //Create inner blur
-                /*lurMaskFilter = new BlurMaskFilter(faceRect.getWidth() / 20, BlurMaskFilter.Blur.NORMAL);
+                blurMaskFilter = new BlurMaskFilter(100, BlurMaskFilter.Blur.INNER);
                 paintBlur.setMaskFilter(blurMaskFilter);
-                canvas.drawBitmap(faceBmp, faceRect.getLeft(), faceRect.getTop(), paintBlur);*/
-                canvas.drawBitmap(faceBmp, faceRect.getLeft(), faceRect.getTop(), null);
+                canvas.drawBitmap(faceBmp, faceRect.getLeft(), faceRect.getTop(), paintBlur);
+                //canvas.drawBitmap(faceBmp, faceRect.getLeft(), faceRect.getTop(), null);
 
                 FaceLandmark leftEye = null;
                 FaceLandmark rightEye = null;
@@ -312,6 +577,8 @@ public class MainActivity extends AppCompatActivity implements MMListener {
 
             }
 
+            timer = new Timer();
+            timer.schedule(new CameraTimer(), 100, 100);
         }
 
         ivImage.setImageBitmap(tempBmp);

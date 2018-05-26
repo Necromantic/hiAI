@@ -8,6 +8,7 @@ import android.util.Log;
 import com.huawei.hiai.vision.face.FaceDetector;
 import com.huawei.hiai.vision.visionkit.common.Frame;
 import com.huawei.hiai.vision.visionkit.face.Face;
+import com.huawei.hiai.vision.visionkit.face.FaceConfiguration;
 
 import org.json.JSONObject;
 
@@ -26,12 +27,13 @@ public class FaceDetectTask extends AsyncTask<Bitmap, Void, List<Face>> {
     FaceDetector faceDetector;
     public FaceDetectTask(MMListener listener) {
         this.listener = listener;
+
+        faceDetector = new FaceDetector((Context)listener);
     }
 
     @Override
     protected List<Face> doInBackground(Bitmap... bmp) {
         Log.i(LOG_TAG, "init FaceDetector");
-        faceDetector = new FaceDetector((Context)listener);
 
         Log.i(LOG_TAG, "start to get face");
         startTime = System.currentTimeMillis();
@@ -39,7 +41,6 @@ public class FaceDetectTask extends AsyncTask<Bitmap, Void, List<Face>> {
         endTime = System.currentTimeMillis();
         Log.i(LOG_TAG, String.format("face detect whole time: %d ms", endTime - startTime));
         //release engine after detect finished
-        faceDetector.release();
         return result_face;
     }
 

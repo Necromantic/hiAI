@@ -14,6 +14,7 @@
         android:layout_marginStart="1dp"
         android:layout_marginTop="3dp"
         android:text="Snap"
+        android:visibility="invisible"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
@@ -33,6 +34,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Select"
+        android:visibility="invisible"
         app:layout_constraintStart_toEndOf="@+id/snapButton"
         app:layout_constraintTop_toTopOf="parent" />
 
