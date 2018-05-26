@@ -7,10 +7,22 @@ import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.BitmapShader;
+import android.graphics.BlurMaskFilter;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.ComposeShader;
+import android.graphics.LinearGradient;
+import android.graphics.MaskFilter;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.Point;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffXfermode;
+import android.graphics.RadialGradient;
+import android.graphics.Rect;
+import android.graphics.Region;
+import android.graphics.Shader;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -27,9 +39,13 @@ import android.widget.TextView;
 
 import com.huawei.hiai.vision.common.ConnectionCallback;
 import com.huawei.hiai.vision.common.VisionBase;
+import com.huawei.hiai.vision.image.sr.ImageSuperResolution;
 import com.huawei.hiai.vision.visionkit.common.BoundingBox;
+import com.huawei.hiai.vision.visionkit.common.Frame;
 import com.huawei.hiai.vision.visionkit.face.Face;
 import com.huawei.hiai.vision.visionkit.face.FaceLandmark;
+import com.huawei.hiai.vision.visionkit.image.ImageResult;
+import com.huawei.hiai.vision.visionkit.image.sr.SuperResolutionConfiguration;
 
 import java.io.File;
 import java.text.SimpleDateFormat;
@@ -66,7 +82,7 @@ public class MainActivity extends AppCompatActivity implements MMListener {
         btnTake.setOnClickListener(new Button.OnClickListener() {
             public void onClick(View v) {
                 initDetect();
-                //Log.d(LOG_TAG, "get uri");
+                Log.d(LOG_TAG, "get uri");
                 fileUri = getOutputMediaFileUri();
                 Log.d(LOG_TAG, "end get uri = " + fileUri);
                 Intent i = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
@@ -148,7 +164,7 @@ public class MainActivity extends AppCompatActivity implements MMListener {
             paint.setColor(Color.GREEN);
             for (Face face : faces) {
                 BoundingBox faceRect = face.getFaceRect();
-                paint.setStyle(Paint.Style.STROKE);
+                /*paint.setStyle(Paint.Style.STROKE);
                 paint.setStrokeWidth((float)(faceRect.getWidth())/100);
                 canvas.drawRect(faceRect.getLeft(), faceRect.getTop(),  faceRect.getLeft()+faceRect.getWidth(), faceRect.getTop()+faceRect.getHeight(), paint);
                 List<FaceLandmark> landmarks = face.getLandmarks();
@@ -168,7 +184,106 @@ public class MainActivity extends AppCompatActivity implements MMListener {
                 canvas.drawText(strFace, textX, textY, paint);
                 strFace = "roll: " + face.getRoll();
                 textY += textHeight;
-                canvas.drawText(strFace, textX, textY, paint);
+                canvas.drawText(strFace, textX, textY, paint);*/
+
+                FaceLandmark leftEye = null;
+                FaceLandmark rightEye = null;
+                FaceLandmark nose = null;
+                FaceLandmark leftLip = null;
+                FaceLandmark rightLip = null;
+                List<FaceLandmark> landmarks = face.getLandmarks();
+                for (FaceLandmark landmark : landmarks) {
+                    if (landmark.getType() == 0)
+                        leftEye = landmark;
+                    if (landmark.getType() == 1)
+                        rightEye = landmark;
+                    if (landmark.getType() == 2)
+                        nose = landmark;
+                    if (landmark.getType() == 3)
+                        leftLip = landmark;
+                    if (landmark.getType() == 4)
+                        rightLip = landmark;
+                }
+
+                if (leftLip != null && rightLip != null) {
+                        int lipWidth = rightLip.getPosition().x - leftLip.getPosition().x;
+                        int lipHeight = lipWidth / 3;
+                        int eyeWidth = faceRect.getWidth() / 6;
+                        int eyeHeight = faceRect.getHeight() / 12;
+
+                        Bitmap lipBmp = Bitmap.createBitmap(bmp, leftLip.getPosition().x, rightLip.getPosition().y - lipHeight / 2, lipWidth, lipHeight);
+                        Bitmap scaledLipBmp = Bitmap.createScaledBitmap(lipBmp, eyeWidth, eyeHeight, false);
+
+                        Path path = new Path();
+                        path.addRoundRect(0, 0, eyeWidth, eyeHeight, 100f, 100f, Path.Direction.CW);
+                        path.setFillType(Path.FillType.WINDING);
+                        scaledLipBmp.setHasAlpha(true);
+                        Canvas lipCanvas = new Canvas(scaledLipBmp);
+                        lipCanvas.clipOutPath(path);
+                        lipCanvas.drawColor(0x000000000, PorterDuff.Mode.CLEAR);
+
+                        if (leftEye != null) {
+                            //canvas.drawBitmap(lipBmp, leftEye.getPosition().x - lipWidth / 2, leftEye.getPosition().y - lipHeight / 2, null);
+                            canvas.drawBitmap(scaledLipBmp, leftEye.getPosition().x - eyeWidth / 2, leftEye.getPosition().y - eyeHeight / 2, null);
+
+                            Bitmap leftEyeBmp = Bitmap.createBitmap(bmp, leftEye.getPosition().x - eyeWidth / 2, leftEye.getPosition().y - eyeHeight / 2, eyeWidth, eyeHeight);
+                            Bitmap scaledLeftEyeBmp = Bitmap.createScaledBitmap(leftEyeBmp, lipWidth, lipHeight, false);
+
+                            path = new Path();
+                            path.addRoundRect(0, 0, lipWidth, lipHeight, 100f, 100f, Path.Direction.CW);
+                            path.setFillType(Path.FillType.WINDING);
+                            scaledLeftEyeBmp.setHasAlpha(true);
+                            Canvas eyeCanvas = new Canvas(scaledLeftEyeBmp);
+                            eyeCanvas.clipOutPath(path);
+                            eyeCanvas.drawColor(0x000000000, PorterDuff.Mode.CLEAR);
+
+                            //canvas.drawBitmap(leftEyeBmp, (leftLip.getPosition().x + rightLip.getPosition().x) / 2 - eyeWidth / 2, (leftLip.getPosition().y + rightLip.getPosition().y) / 2 - eyeHeight / 2, null);
+                            canvas.drawBitmap(scaledLeftEyeBmp, (leftLip.getPosition().x + rightLip.getPosition().x) / 2 - lipWidth / 2, (leftLip.getPosition().y + rightLip.getPosition().y) / 2 - lipHeight / 2, null);
+                        }
+
+                    if (rightEye != null)
+                        //canvas.drawBitmap(lipBmp, rightEye.getPosition().x - lipWidth / 2, rightEye.getPosition().y - lipHeight / 2, null);
+                        canvas.drawBitmap(scaledLipBmp, rightEye.getPosition().x - eyeWidth / 2, rightEye.getPosition().y - eyeHeight / 2, null);
+                }
+
+                /*if (leftEye != null) {
+                    int width = faceRect.getWidth() / 7;
+                    int height = faceRect.getHeight() / 12;
+                    Bitmap leftEyeBmp = Bitmap.createBitmap(tempBmp, leftEye.getPosition().x - width / 2, leftEye.getPosition().y - height / 2, width, height);
+
+                    canvas.drawBitmap(leftEyeBmp, leftEye.getPosition().x - width / 2, leftEye.getPosition().y + height / 2, null);
+                    //canvas.drawBitmap(leftEyeBmp, landmark.getPosition().x - width / 2, landmark.getPosition().y + height / 2  + height, null);
+                    //canvas.drawBitmap(leftEyeBmp, landmark.getPosition().x - width / 2, landmark.getPosition().y + height / 2 + height * 2, null);
+
+                    Frame frame = new Frame();
+                    frame.setBitmap(leftEyeBmp);
+                }*/
+
+                /*Bitmap faceBmp = Bitmap.createBitmap(tempBmp, faceRect.getLeft(), faceRect.getTop(), faceRect.getWidth(), faceRect.getHeight());;
+                Bitmap shrunkBmp = Bitmap.createScaledBitmap(faceBmp,faceRect.getWidth() / 6, faceRect.getHeight() / 6, false);
+
+                Frame frame = new Frame();
+                frame.setBitmap(shrunkBmp);
+
+                ImageSuperResolution superResolution = new ImageSuperResolution(MainActivity.this);
+
+                SuperResolutionConfiguration paras = new SuperResolutionConfiguration(
+                        SuperResolutionConfiguration.SISR_SCALE_3X,
+                        SuperResolutionConfiguration.SISR_QUALITY_HIGH);
+
+                superResolution.setSuperResolutionConfiguration(paras);
+
+                ImageResult result = superResolution.doSuperResolution(frame, null);*/
+
+                //Log.e(LOG_TAG, "" + result.getResultCode());
+                /*if (result.getBitmap() == null) {
+                    Log.e(LOG_TAG, "Result bitmap is null!");
+
+                    return;
+                }
+
+                canvas.drawBitmap(result.getBitmap(), faceRect.getLeft(), faceRect.getTop(), null);*/
+
             }
 
         }
