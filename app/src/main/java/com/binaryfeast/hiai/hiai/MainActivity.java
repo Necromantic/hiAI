@@ -186,7 +186,8 @@ public class MainActivity extends AppCompatActivity implements MMListener {
         Log.e(LOG_TAG, "onPause");
         stopBackgroundThread();
         super.onPause();
-        timer.cancel();
+        if (timer != null)
+            timer.cancel();
     }
 
     protected void startBackgroundThread() {
@@ -247,14 +248,21 @@ public class MainActivity extends AppCompatActivity implements MMListener {
         }
         @Override
         public void onDisconnected(CameraDevice camera) {
-            cameraDevice.close();
-            timer.cancel();
+            if (cameraDevice != null) {
+                cameraDevice.close();
+                cameraDevice = null;
+            }
+            if (timer != null)
+                timer.cancel();
         }
         @Override
         public void onError(CameraDevice camera, int error) {
-            cameraDevice.close();
-            cameraDevice = null;
-            timer.cancel();
+            if (cameraDevice != null) {
+                cameraDevice.close();
+                cameraDevice = null;
+            }
+            if (timer != null)
+                timer.cancel();
         }
     };
 
@@ -270,7 +278,8 @@ public class MainActivity extends AppCompatActivity implements MMListener {
     }
 
     protected void takePicture() {
-        timer.cancel();
+        if (timer != null)
+            timer.cancel();
         if(null == cameraDevice) {
             Log.e(LOG_TAG, "cameraDevice is null");
             return;
