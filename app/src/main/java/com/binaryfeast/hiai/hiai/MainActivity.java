@@ -65,6 +65,7 @@ import android.widget.TextView;
 
 import com.huawei.hiai.vision.common.ConnectionCallback;
 import com.huawei.hiai.vision.common.VisionBase;
+import com.huawei.hiai.vision.face.FaceComparator;
 import com.huawei.hiai.vision.image.sr.ImageSuperResolution;
 import com.huawei.hiai.vision.visionkit.common.BoundingBox;
 import com.huawei.hiai.vision.visionkit.common.Frame;
@@ -424,15 +425,43 @@ public class MainActivity extends AppCompatActivity implements MMListener {
 
         super.onActivityResult(requestCode, resultCode, data);
     }
+
+    private Bitmap FillBitmapWithRandomBlackStrokes(Bitmap bmp){
+
+        int width = bmp.getWidth();
+        int height = bmp.getHeight();
+
+        for(int i = 0; i < width/2; ++i){
+            for(int j = 0; j < height/2; ++j){
+                bmp.setPixel(i,j,Color.argb(0,0,0,0));
+            }
+        }
+        return bmp;
+    }
+
     @Override
     public void onTaskCompleted(List<Face> faces) {
 
+
+        //Bitmap originalBmp = bmp.copy(Bitmap.Config.ARGB_8888, true);
         Bitmap tempBmp = bmp.copy(Bitmap.Config.ARGB_8888, true);
+        //originalBmp.setHasAlpha(true);
+
+        //final BitmapFactory.Options options = new BitmapFactory.Options();
+        //options.inSampleSize = 8;
+
+        //originalBmp = FillBitmapWithRandomBlackStrokes(originalBmp);
+        //tempBmp = BlurUtilities.boxBlur(originalBmp,10);
+
+        if(!tempBmp.isMutable()){
+            tempBmp = tempBmp.copy(Bitmap.Config.ARGB_8888, true);
+        }
 
         if (faces == null) {
             tvFace.setText("not get face");
         } else {
             Canvas canvas = new Canvas(tempBmp);
+
 
             //Paint paint = new Paint();
             //paint.setColor(Color.GREEN);
@@ -522,9 +551,14 @@ public class MainActivity extends AppCompatActivity implements MMListener {
                         lipCanvas.clipOutPath(path);
                         lipCanvas.drawColor(0x000000000, PorterDuff.Mode.CLEAR);
 
+                        int amount = (int)(face.getRoll() / 15);
+
                         if (leftEye != null) {
                             //canvas.drawBitmap(lipBmp, leftEye.getPosition().x - lipWidth / 2, leftEye.getPosition().y - lipHeight / 2, null);
                             canvas.drawBitmap(scaledLipBmp, leftEye.getPosition().x - eyeWidth / 2, leftEye.getPosition().y - eyeHeight / 2, null);
+
+                            for (int i  = 0; i < amount; ++i)
+                                canvas.drawBitmap(scaledLipBmp, leftEye.getPosition().x - eyeWidth / 2, leftEye.getPosition().y - eyeHeight / 2 - eyeHeight - eyeHeight * i, null);
 
                             Bitmap leftEyeBmp = Bitmap.createBitmap(bmp, leftEye.getPosition().x - eyeWidth / 2, leftEye.getPosition().y - eyeHeight / 2, eyeWidth, eyeHeight);
                             Bitmap scaledLeftEyeBmp = Bitmap.createScaledBitmap(leftEyeBmp, lipWidth, lipHeight, false);
@@ -541,9 +575,13 @@ public class MainActivity extends AppCompatActivity implements MMListener {
                             canvas.drawBitmap(scaledLeftEyeBmp, (leftLip.getPosition().x + rightLip.getPosition().x) / 2 - lipWidth / 2, (leftLip.getPosition().y + rightLip.getPosition().y) / 2 - lipHeight / 2, null);
                         }
 
-                    if (rightEye != null)
+                    if (rightEye != null) {
                         //canvas.drawBitmap(lipBmp, rightEye.getPosition().x - lipWidth / 2, rightEye.getPosition().y - lipHeight / 2, null);
                         canvas.drawBitmap(scaledLipBmp, rightEye.getPosition().x - eyeWidth / 2, rightEye.getPosition().y - eyeHeight / 2, null);
+
+                        for (int i  = 0; i < amount; ++i)
+                            canvas.drawBitmap(scaledLipBmp, rightEye.getPosition().x - eyeWidth / 2, rightEye.getPosition().y - eyeHeight / 2 - eyeHeight - eyeHeight * i, null);
+                    }
                 }
 
                 /*if (leftEye != null) {
@@ -584,7 +622,7 @@ public class MainActivity extends AppCompatActivity implements MMListener {
 
                 canvas.drawBitmap(result.getBitmap(), faceRect.getLeft(), faceRect.getTop(), null);*/
 
-                Bitmap faceBmp = Bitmap.createBitmap(bmp, faceRect.getLeft(), faceRect.getTop(), faceRect.getWidth(), faceRect.getHeight());
+                Bitmap faceBmp = Bitmap.createBitmap(tempBmp, faceRect.getLeft(), faceRect.getTop(), faceRect.getWidth(), faceRect.getHeight());
                 Path path = new Path();
                 path.addOval(faceRect.getWidth() / 6, faceRect.getHeight() / 6, faceRect.getWidth() - faceRect.getWidth() / 6, faceRect.getHeight() - faceRect.getHeight() / 6, Path.Direction.CW);
                 path.setFillType(Path.FillType.WINDING);
@@ -592,6 +630,18 @@ public class MainActivity extends AppCompatActivity implements MMListener {
                 Canvas faceCanvas = new Canvas(faceBmp);
                 faceCanvas.clipOutPath(path);
                 faceCanvas.drawColor(0x000000000, PorterDuff.Mode.CLEAR);
+
+                Bitmap alpha = faceBmp.extractAlpha();
+                Paint paintBlur = new Paint();
+                BlurMaskFilter blurMaskFilter = new BlurMaskFilter(100, BlurMaskFilter.Blur.OUTER);
+                paintBlur.setMaskFilter(blurMaskFilter);
+                faceCanvas.drawBitmap(alpha, 0, 0, paintBlur);
+
+                //Create inner blur
+                blurMaskFilter = new BlurMaskFilter(100, BlurMaskFilter.Blur.INNER);
+                paintBlur.setMaskFilter(blurMaskFilter);
+                canvas.drawBitmap(faceBmp, faceRect.getLeft(), faceRect.getTop(), paintBlur);
+                //canvas.drawBitmap(faceBmp, faceRect.getLeft(), faceRect.getTop(), null);
 
                 faceBmps.add(faceBmp);
             }
